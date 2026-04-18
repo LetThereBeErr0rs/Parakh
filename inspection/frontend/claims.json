@@ -1,0 +1,100 @@
+[
+  {
+    "text": "Earth orbits the sun",
+    "verdict": "supported",
+    "category": "Science",
+    "conf": 99,
+    "desc": "Fundamental heliocentric astronomical fact confirmed for centuries."
+  },
+  {
+    "text": "Drinking warm water cures COVID-19",
+    "verdict": "refuted",
+    "category": "Health",
+    "conf": 97,
+    "desc": "No clinical evidence supports this claim. WHO and CDC have explicitly debunked it."
+  },
+  {
+    "text": "5G towers spread viruses",
+    "verdict": "refuted",
+    "category": "Technology",
+    "conf": 99,
+    "desc": "Viruses are biological agents; they cannot travel on electromagnetic radio waves."
+  },
+  {
+    "text": "India became the most populous country in 2023",
+    "verdict": "supported",
+    "category": "Global",
+    "conf": 97,
+    "desc": "UN World Population Prospects data confirms India surpassed China in early 2023."
+  },
+  {
+    "text": "Eating carrots significantly improves night vision",
+    "verdict": "uncertain",
+    "category": "Health",
+    "conf": 60,
+    "desc": "Vitamin A deficiency can impair night vision, but normal intake gives no super-vision boost."
+  },
+  {
+    "text": "GPT-4 passed the US bar exam",
+    "verdict": "supported",
+    "category": "Technology",
+    "conf": 92,
+    "desc": "OpenAI's technical report confirmed GPT-4 scored around the 90th percentile on the bar exam."
+  },
+  {
+    "text": "The Great Wall of China is visible from space",
+    "verdict": "refuted",
+    "category": "Science",
+    "conf": 94,
+    "desc": "Multiple astronauts, including Chinese astronaut Yang Liwei, confirmed it is not visible from orbit."
+  },
+  {
+    "text": "COVID-19 vaccines contain microchips",
+    "verdict": "refuted",
+    "category": "Health",
+    "conf": 99,
+    "desc": "Thoroughly debunked conspiracy. mRNA vaccines contain no electronic components of any kind."
+  },
+  {
+    "text": "Albert Einstein failed mathematics in school",
+    "verdict": "refuted",
+    "category": "History",
+    "conf": 88,
+    "desc": "Einstein excelled at mathematics and physics from a young age. This is a persistent myth."
+  },
+  {
+    "text": "Electric vehicles produce zero emissions overall",
+    "verdict": "uncertain",
+    "category": "Environment",
+    "conf": 65,
+    "desc": "EVs have zero tailpipe emissions, but manufacturing and electricity generation still produce emissions."
+  },
+  {
+    "text": "The global average temperature has risen by ~1.1°C since pre-industrial times",
+    "verdict": "supported",
+    "category": "Climate",
+    "conf": 98,
+    "desc": "IPCC reports and multiple global temperature datasets confirm approximately 1.1°C of warming."
+  },
+  {
+    "text": "Humans only use 10% of their brains",
+    "verdict": "refuted",
+    "category": "Science",
+    "conf": 99,
+    "desc": "Brain imaging studies show virtually all brain regions are active across daily tasks."
+  },
+  {
+    "text": "Aspirin reduces the risk of heart attack",
+    "verdict": "uncertain",
+    "category": "Health",
+    "conf": 72,
+    "desc": "Low-dose aspirin therapy has evidence for secondary prevention but risks for primary prevention. Consult a doctor."
+  },
+  {
+    "text": "The Moon landing in 1969 was faked",
+    "verdict": "refuted",
+    "category": "History",
+    "conf": 99,
+    "desc": "Extensive independent evidence including lunar samples, retroreflectors, and Soviet tracking data confirm the Apollo 11 landing."
+  }
+]

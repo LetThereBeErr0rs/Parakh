@@ -1,0 +1,57 @@
+# Python environments and packages
+venv/
+venv_new/
+env/
+ENV/
+*.egg-info/
+dist/
+build/
+__pycache__/
+*.pyc
+*.pyo
+*.egg
+.Python
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment & Secrets
+.env
+.env.local
+.env.*.local
+*.key
+*.pem
+secrets.json
+api_keys.txt
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Dependencies
+node_modules/
+*.log
+
+# Data
+*.csv
+data/
+*.tsv
+*.txt
+
+# Cache
+.cache/
+*.cache
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Build outputs
+dist/
+build/
+*.whl

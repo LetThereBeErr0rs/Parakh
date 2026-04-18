@@ -1,0 +1,9 @@
+.venv/
+venv/
+venv_new/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.DS_Store
+backend/bug1/.env

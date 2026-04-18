@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Viral Claim Radar Lite</title>
+  <style>
+    body {
+      width: 300px;
+      padding: 16px;
+      font-family: 'Inter', system-ui, sans-serif;
+      background: #0f172a;
+      color: #f1f5f9;
+      margin: 0;
+    }
+    h2 {
+      margin-top: 0;
+      font-size: 16px;
+      color: #7c3aed;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+      padding-bottom: 8px;
+    }
+    textarea {
+      width: 100%;
+      box-sizing: border-box;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.2);
+      color: white;
+      border-radius: 6px;
+      padding: 8px;
+      resize: none;
+      font-family: inherit;
+    }
+    button {
+      width: 100%;
+      margin-top: 10px;
+      background: linear-gradient(135deg, #7c3aed, #5b21b6);
+      color: white;
+      border: none;
+      padding: 10px;
+      border-radius: 6px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    button:hover {
+      opacity: 0.9;
+    }
+    #result {
+      margin-top: 12px;
+      font-size: 13px;
+      padding: 10px;
+      border-radius: 6px;
+      display: none;
+    }
+    .supported { background: rgba(34,197,94,0.15); border-left: 3px solid #22c55e;}
+    .refuted { background: rgba(239,68,68,0.15); border-left: 3px solid #ef4444;}
+    .uncertain { background: rgba(234,179,8,0.15); border-left: 3px solid #eab308;}
+  </style>
+</head>
+<body>
+  <h2>📡 Claim Radar Lite</h2>
+  <textarea id="claim-text" rows="4" placeholder="Paste a claim to verify..."></textarea>
+  <button id="verify-btn">Verify</button>
+  
+  <div id="result">
+    <strong id="res-status"></strong> (<span id="res-conf"></span>%)
+    <p id="res-summary" style="margin: 8px 0 0 0; color: #94a3b8; font-size: 11px;"></p>
+  </div>
+  
+  <script src="popup.js"></script>
+</body>
+</html>
