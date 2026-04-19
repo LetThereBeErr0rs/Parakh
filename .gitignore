@@ -36,11 +36,19 @@ Thumbs.db
 node_modules/
 *.log
 
-# Data
+# Data (exclude large data files but NOT requirements.txt)
 *.csv
 data/
 *.tsv
-*.txt
+# Exclude plain text data files but keep requirements and docs
+apt.txt
+debug_output.txt
+debug_rag.log
+data.txt
+# Allow requirements.txt and README/docs explicitly
+!requirements.txt
+!README.md
+!*.md
 
 # Cache
 .cache/

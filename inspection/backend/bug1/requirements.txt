@@ -1,0 +1,32 @@
+# ── Web framework ──────────────────────────────────────────────────────────────
+fastapi
+gunicorn
+uvicorn[standard]
+pydantic
+python-multipart
+python-dotenv
+
+# ── HTTP / scraping ────────────────────────────────────────────────────────────
+requests
+httpx
+beautifulsoup4
+
+# ── Image processing / OCR ────────────────────────────────────────────────────
+Pillow
+pytesseract
+
+# ── LangChain + FAISS vector store ────────────────────────────────────────────
+langchain
+langchain-core
+langchain-community
+langchain-huggingface
+faiss-cpu
+
+# ── Embeddings / NLP ──────────────────────────────────────────────────────────
+sentence-transformers
+transformers
+torch --index-url https://download.pytorch.org/whl/cpu
+
+# ── Gemini AI fallback ────────────────────────────────────────────────────────
+google-genai
+google-generativeai

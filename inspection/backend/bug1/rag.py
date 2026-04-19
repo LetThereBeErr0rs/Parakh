@@ -465,18 +465,21 @@ def verify_claim(text: str) -> Any:
             return _fallback("Retrieved documents contain no usable text")
         
         # ───────────────────────────────────────────────────────────────
-        # PRIMARY: Use local generator for verification (most reliable)
+        # PRIMARY: Use local generator if available
+        # FALLBACK: Use FAISS label-based verdict when generator is off
         # ───────────────────────────────────────────────────────────────
         if qa_chain.generator is None:
-            logger.warning("[VERIFY] Local generator disabled - returning Uncertain (safer than hallucinating)")
-            # Return Uncertain since we have no way to verify reliably
-            result = {
-                "status": UNCERTAIN_VERDICT,
-                "confidence": 35,
-                "summary": "Retrieved relevant context but unable to verify claim without text generation. Please enable the local generator for accurate results.",
-            }
-            result["evidence"] = evidence_snippets
-            return result
+            logger.info("[VERIFY] Local generator disabled — using label-based verdict from FAISS documents")
+            # Use document metadata labels to determine verdict (no LLM needed)
+            label_verdict = _label_from_documents(documents)
+            if label_verdict:
+                logger.info(f"[VERIFY] Label-based verdict: {label_verdict}")
+                result = _finalize_verdict(clean_text(str(text)), documents, "")
+                result["evidence"] = evidence_snippets
+                return result
+            else:
+                logger.warning("[VERIFY] No labels in FAISS index — delegating to Gemini fallback")
+                return _fallback("No labels in FAISS index and local generator is disabled")
         
         # Use local generator with context
         question = clean_text(str(text))
