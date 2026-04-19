@@ -415,8 +415,13 @@ def verify_claim(text: str) -> Any:
     """
     Run the full RAG pipeline on *text*.
     
-    FIXED: Fallback only triggers for TRUE EXCEPTIONS.
-    No longer triggers for Uncertain results or missing context.
+    CRITICAL FIX: Never use FAISS pre-labeled data directly.
+    Instead:
+    1. Retrieve relevant context from FAISS
+    2. Use local generator to verify (if available)
+    3. Return Uncertain if no generator available (safer than hallucinating)
+    
+    This prevents hallucinations from misleading labels in the dataset.
     """
     evidence_snippets: list[dict[str, str]] = []
 
@@ -431,24 +436,19 @@ def verify_claim(text: str) -> Any:
     logger.info(f"[VERIFY] Question: {text[:100]}")
     try:
         qa_chain = get_qa_chain()
-
-        if qa_chain.generator is None:
-            logger.warning("[VERIFY] Local generator disabled")
-            return _fallback("Local text generator disabled or unavailable")
-
-        result = qa_chain.invoke({"question": text})
-        answer = str(result.get("result", "") or "").strip()
-        documents = result.get("source_documents", []) or []
-
+        
+        # Get documents
+        documents = qa_chain.retriever.invoke(text)
         logger.info(f"[VERIFY] Retrieved {len(documents)} documents")
-        context_preview = " ".join(getattr(doc, "page_content", "") for doc in documents)[:200]
-        logger.info(f"[VERIFY] Context: {context_preview}")
-
-        # ONLY use fallback if no docs retrieved (genuine failure)
+        
         if not documents:
             logger.warning("[VERIFY] No documents retrieved")
             return _fallback("No documents retrieved from FAISS")
-
+        
+        # Build evidence
+        context_preview = " ".join(getattr(doc, "page_content", "") for doc in documents)[:200]
+        logger.info(f"[VERIFY] Context: {context_preview}")
+        
         for doc in documents[:8]:
             content = getattr(doc, "page_content", "") or ""
             if content.strip():
@@ -459,28 +459,41 @@ def verify_claim(text: str) -> Any:
                     "title": speaker if speaker else title,
                     "text": content[:300] + ("..." if len(content) > 300 else "")
                 })
-
+        
         if not any(evidence["text"].strip() for evidence in evidence_snippets):
             logger.warning("[VERIFY] No usable evidence text")
             return _fallback("Retrieved documents contain no usable text")
-
-        if not answer:
-            logger.warning("[VERIFY] Empty answer from chain")
-            return _fallback("Local chain returned an empty answer")
-
-        parsed = parse_response(answer)
-        logger.info(f"[VERIFY] Status={parsed.get('status')} Confidence={parsed.get('confidence')}")
-
-        if parsed.get("status") not in {SUPPORTED_VERDICT, REFUTED_VERDICT, UNCERTAIN_VERDICT}:
-            logger.warning(f"[VERIFY] Invalid status: {parsed.get('status')}")
-            return _fallback("Local chain produced an invalid status")
-
-        # FIXED: DO NOT trigger fallback for Uncertain or low confidence
-        # These are valid results! Uncertain is a legitimate verdict.
-        logger.info(f"[VERIFY] Final result: {parsed.get('status')} ({parsed.get('confidence')}%)")
+        
+        # ───────────────────────────────────────────────────────────────
+        # PRIMARY: Use local generator for verification (most reliable)
+        # ───────────────────────────────────────────────────────────────
+        if qa_chain.generator is None:
+            logger.warning("[VERIFY] Local generator disabled - returning Uncertain (safer than hallucinating)")
+            # Return Uncertain since we have no way to verify reliably
+            result = {
+                "status": UNCERTAIN_VERDICT,
+                "confidence": 35,
+                "summary": "Retrieved relevant context but unable to verify claim without text generation. Please enable the local generator for accurate results.",
+            }
+            result["evidence"] = evidence_snippets
+            return result
+        
+        # Use local generator with context
+        question = clean_text(str(text))
+        context = "\n\n".join(getattr(doc, "page_content", "") for doc in documents)
+        prompt = qa_chain._compose_prompt(question, context)
+        model_answer = qa_chain._generate_answer(prompt)
+        
+        if not model_answer:
+            logger.warning("[VERIFY] Generator returned empty answer")
+            return _fallback("Local generator returned an empty answer")
+        
+        parsed = parse_response(model_answer)
+        logger.info(f"[VERIFY] LLM result: {parsed.get('status')} ({parsed.get('confidence')}%)")
         
         parsed["evidence"] = evidence_snippets
         return parsed
+        
     except Exception as exc:
-        logger.exception("[VERIFY] Exception in verify_claim")
+        logger.exception(f"[VERIFY] Exception in verify_claim: {type(exc).__name__}: {exc}")
         return _fallback("Unexpected exception in verify_claim")
