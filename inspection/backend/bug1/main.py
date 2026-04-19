@@ -270,5 +270,3 @@ async def verify_image(file: UploadFile = File(...)) -> dict[str, object]:
             "summary": "The image text could not be verified due to an unexpected backend error.",
             "evidence": [],
         }
-            "evidence": [],
-        }
