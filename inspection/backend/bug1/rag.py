@@ -140,13 +140,15 @@ def get_qa_chain() -> QAChain:
 # ─────────────────────────────────────────────────────────────
 # Context relevance check
 # ─────────────────────────────────────────────────────────────
-def _context_relevance(question: str, documents: list[Any]) -> bool:
+def _context_relevance(question: str, documents: list[Any], min_overlap: int = 2) -> bool:
     """
-    Return True if the retrieved context contains at least one meaningful
-    keyword from the question. This is intentionally permissive to avoid
-    dropping good retrieval results in production.
+    FIXED: Stricter relevance check - requires AT LEAST 2 term overlaps.
+    
+    This prevents the fallback from being triggered on weak matches,
+    which was a major source of hallucinations.
     """
     if not documents:
+        logger.debug("[RELEVANCE] No documents provided")
         return False
 
     question_terms = {
@@ -154,16 +156,22 @@ def _context_relevance(question: str, documents: list[Any]) -> bool:
         if len(term) > 2
     }
     if not question_terms:
+        logger.debug("[RELEVANCE] No valid terms in question")
         return False
 
     context_text = " ".join(
         getattr(doc, "page_content", "") for doc in documents
     ).lower()
     if not context_text.strip():
+        logger.debug("[RELEVANCE] No context text available")
         return False
 
     overlap = sum(1 for term in question_terms if term in context_text)
-    return overlap >= 1
+    is_relevant = overlap >= min_overlap
+    
+    logger.info(f"[RELEVANCE] Q-terms={len(question_terms)}, overlaps={overlap}, min_required={min_overlap}, result={is_relevant}")
+    
+    return is_relevant
 
 
 # ─────────────────────────────────────────────────────────────
@@ -406,37 +414,39 @@ def _finalize_verdict(
 def verify_claim(text: str) -> Any:
     """
     Run the full RAG pipeline on *text*.
-    Falls back to multi_model_verify if:
-      - The local chain raises an exception
-      - No useful documents were retrieved
-      - The local answer is empty, invalid, or uncertain with low confidence
-      - The local generator is unavailable
+    
+    FIXED: Fallback only triggers for TRUE EXCEPTIONS.
+    No longer triggers for Uncertain results or missing context.
     """
     evidence_snippets: list[dict[str, str]] = []
 
     def _fallback(reason: str) -> dict[str, Any]:
-        logger.warning("Fallback triggered: %s", reason)
+        """ONLY use fallback for genuine failures (no docs, exception)."""
+        logger.warning(f"[FALLBACK] Triggered: {reason}")
         fallback_ans = multi_model_verify(text)
         parsed = parse_response(fallback_ans)
         parsed["evidence"] = evidence_snippets
         return parsed
 
-    logger.info("verify_claim request: %s", text[:200])
+    logger.info(f"[VERIFY] Question: {text[:100]}")
     try:
         qa_chain = get_qa_chain()
 
         if qa_chain.generator is None:
+            logger.warning("[VERIFY] Local generator disabled")
             return _fallback("Local text generator disabled or unavailable")
 
         result = qa_chain.invoke({"question": text})
         answer = str(result.get("result", "") or "").strip()
         documents = result.get("source_documents", []) or []
 
-        logger.info("Retrieved %d source documents.", len(documents))
+        logger.info(f"[VERIFY] Retrieved {len(documents)} documents")
         context_preview = " ".join(getattr(doc, "page_content", "") for doc in documents)[:200]
-        logger.info("Context preview: %s", context_preview)
+        logger.info(f"[VERIFY] Context: {context_preview}")
 
+        # ONLY use fallback if no docs retrieved (genuine failure)
         if not documents:
+            logger.warning("[VERIFY] No documents retrieved")
             return _fallback("No documents retrieved from FAISS")
 
         for doc in documents[:8]:
@@ -451,25 +461,26 @@ def verify_claim(text: str) -> Any:
                 })
 
         if not any(evidence["text"].strip() for evidence in evidence_snippets):
+            logger.warning("[VERIFY] No usable evidence text")
             return _fallback("Retrieved documents contain no usable text")
 
-        if not _context_relevance(text, documents):
-            return _fallback("Retrieved context is not sufficiently relevant")
-
         if not answer:
+            logger.warning("[VERIFY] Empty answer from chain")
             return _fallback("Local chain returned an empty answer")
 
         parsed = parse_response(answer)
-        logger.info("Local chain result status=%s confidence=%s", parsed.get("status"), parsed.get("confidence"))
+        logger.info(f"[VERIFY] Status={parsed.get('status')} Confidence={parsed.get('confidence')}")
 
         if parsed.get("status") not in {SUPPORTED_VERDICT, REFUTED_VERDICT, UNCERTAIN_VERDICT}:
+            logger.warning(f"[VERIFY] Invalid status: {parsed.get('status')}")
             return _fallback("Local chain produced an invalid status")
 
-        if parsed["status"] == UNCERTAIN_VERDICT and parsed["confidence"] < 40:
-            return _fallback("Local chain uncertain result with low confidence")
-
+        # FIXED: DO NOT trigger fallback for Uncertain or low confidence
+        # These are valid results! Uncertain is a legitimate verdict.
+        logger.info(f"[VERIFY] Final result: {parsed.get('status')} ({parsed.get('confidence')}%)")
+        
         parsed["evidence"] = evidence_snippets
         return parsed
     except Exception as exc:
-        logger.exception("verify_claim failed, forcing external fallback.")
+        logger.exception("[VERIFY] Exception in verify_claim")
         return _fallback("Unexpected exception in verify_claim")
