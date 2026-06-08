@@ -1,0 +1,20 @@
+# Core backend API
+fastapi
+gunicorn
+uvicorn[standard]
+pydantic
+python-multipart
+python-dotenv
+
+# Data extraction utilities
+requests
+beautifulsoup4
+Pillow
+pytesseract
+
+# Retrieval and model utilities
+transformers
+sentence-transformers
+
+# Optional cloud fallback model router
+google-genai

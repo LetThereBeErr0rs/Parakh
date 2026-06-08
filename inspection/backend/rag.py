@@ -7,11 +7,11 @@ import re
 from functools import lru_cache
 from typing import Any
 
-from ingest import ensure_faiss_index
+from inspection.backend.ingest import ensure_faiss_index
 
 logger = logging.getLogger(__name__)
-from utils import clean_text, parse_response
-from multi_ai_fallback import multi_model_verify
+from inspection.backend.utils import clean_text, parse_response
+from inspection.backend.multi_ai_fallback import multi_model_verify
 
 # ─────────────────────────────────────────────────────────────
 # Normalised verdict labels (match what ingest.py stores in
@@ -413,20 +413,15 @@ def _finalize_verdict(
 # ─────────────────────────────────────────────────────────────
 def verify_claim(text: str) -> Any:
     """
-    Run the full RAG pipeline on *text*.
-    
-    CRITICAL FIX: Never use FAISS pre-labeled data directly.
-    Instead:
-    1. Retrieve relevant context from FAISS
-    2. Use local generator to verify (if available)
-    3. Return Uncertain if no generator available (safer than hallucinating)
-    
-    This prevents hallucinations from misleading labels in the dataset.
+    Improved version:
+    - Keeps your FAISS + label logic
+    - BUT prevents wrong answers for unrelated/general questions
+    - Uses fallback (Gemini) when context is weak
     """
+
     evidence_snippets: list[dict[str, str]] = []
 
     def _fallback(reason: str) -> dict[str, Any]:
-        """ONLY use fallback for genuine failures (no docs, exception)."""
         logger.warning(f"[FALLBACK] Triggered: {reason}")
         fallback_ans = multi_model_verify(text)
         parsed = parse_response(fallback_ans)
@@ -434,69 +429,79 @@ def verify_claim(text: str) -> Any:
         return parsed
 
     logger.info(f"[VERIFY] Question: {text[:100]}")
+
     try:
         qa_chain = get_qa_chain()
+
+        # ─────────────────────────────────────────────
+        # STEP 1: Retrieve documents
+        # ─────────────────────────────────────────────
+        db = ensure_faiss_index()
+        docs_and_scores = db.similarity_search_with_score(text, k=8)
         
-        # Get documents
-        documents = qa_chain.retriever.invoke(text)
-        logger.info(f"[VERIFY] Retrieved {len(documents)} documents")
+        # Filter out unrelated documents using an L2 distance threshold
+        # (Related matches typically score < 0.8, unrelated > 1.0)
+        MAX_DISTANCE = 0.98
+        documents = [doc for doc, score in docs_and_scores if score < MAX_DISTANCE]
         
+        logger.info(f"[VERIFY] Retrieved {len(documents)} relevant documents (out of {len(docs_and_scores)} matches)")
+
         if not documents:
-            logger.warning("[VERIFY] No documents retrieved")
-            return _fallback("No documents retrieved from FAISS")
-        
-        # Build evidence
-        context_preview = " ".join(getattr(doc, "page_content", "") for doc in documents)[:200]
-        logger.info(f"[VERIFY] Context: {context_preview}")
-        
+            return _fallback("No relevant fact-check records found in FAISS (score threshold)")
+
+        # ─────────────────────────────────────────────
+        # STEP 2: Build evidence
+        # ─────────────────────────────────────────────
         for doc in documents[:8]:
             content = getattr(doc, "page_content", "") or ""
             if content.strip():
                 meta = getattr(doc, "metadata", {}) or {}
                 speaker = str(meta.get("speaker", "")).strip()
                 title = str(meta.get("context", "")).strip() or "Fact-Check Source"
+
                 evidence_snippets.append({
                     "title": speaker if speaker else title,
                     "text": content[:300] + ("..." if len(content) > 300 else "")
                 })
-        
-        if not any(evidence["text"].strip() for evidence in evidence_snippets):
-            logger.warning("[VERIFY] No usable evidence text")
-            return _fallback("Retrieved documents contain no usable text")
-        
-        # ───────────────────────────────────────────────────────────────
-        # PRIMARY: Use local generator if available
-        # FALLBACK: Use FAISS label-based verdict when generator is off
-        # ───────────────────────────────────────────────────────────────
+
+        # ─────────────────────────────────────────────
+        # STEP 3: STRICT relevance check (IMPORTANT FIX)
+        # ─────────────────────────────────────────────
+        if not _context_relevance(text, documents, min_overlap=2):
+            logger.warning("[VERIFY] Context not relevant → using fallback")
+            return _fallback("Low relevance context (likely outside dataset domain)")
+
+        # ─────────────────────────────────────────────
+        # STEP 4: If NO generator → DO NOT trust labels blindly
+        # ─────────────────────────────────────────────
         if qa_chain.generator is None:
-            logger.info("[VERIFY] Local generator disabled — using label-based verdict from FAISS documents")
-            # Use document metadata labels to determine verdict (no LLM needed)
-            label_verdict = _label_from_documents(documents)
-            if label_verdict:
-                logger.info(f"[VERIFY] Label-based verdict: {label_verdict}")
-                result = _finalize_verdict(clean_text(str(text)), documents, "")
-                result["evidence"] = evidence_snippets
-                return result
-            else:
-                logger.warning("[VERIFY] No labels in FAISS index — delegating to Gemini fallback")
-                return _fallback("No labels in FAISS index and local generator is disabled")
-        
-        # Use local generator with context
+            logger.warning("[VERIFY] No generator → using fallback instead of labels")
+            return _fallback("Generator disabled — avoiding label-only hallucination")
+
+        # ─────────────────────────────────────────────
+        # STEP 5: Use LLM with context
+        # ─────────────────────────────────────────────
         question = clean_text(str(text))
         context = "\n\n".join(getattr(doc, "page_content", "") for doc in documents)
+
         prompt = qa_chain._compose_prompt(question, context)
         model_answer = qa_chain._generate_answer(prompt)
-        
+
         if not model_answer:
-            logger.warning("[VERIFY] Generator returned empty answer")
-            return _fallback("Local generator returned an empty answer")
-        
+            return _fallback("Empty response from generator")
+
         parsed = parse_response(model_answer)
-        logger.info(f"[VERIFY] LLM result: {parsed.get('status')} ({parsed.get('confidence')}%)")
-        
-        parsed["evidence"] = evidence_snippets
-        return parsed
-        
+
+        # ─────────────────────────────────────────────
+        # STEP 6: Final decision (keep your logic)
+        # ─────────────────────────────────────────────
+        result = _finalize_verdict(question, documents, model_answer)
+
+        result["evidence"] = evidence_snippets
+        return result
+
     except Exception as exc:
-        logger.exception(f"[VERIFY] Exception in verify_claim: {type(exc).__name__}: {exc}")
+        logger.exception(f"[VERIFY] Exception: {type(exc).__name__}: {exc}")
         return _fallback("Unexpected exception in verify_claim")
+    
+    

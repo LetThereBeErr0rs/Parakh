@@ -7,3 +7,5 @@ __pycache__/
 *.pyd
 .DS_Store
 backend/bug1/.env
+history.db
+node_modules/

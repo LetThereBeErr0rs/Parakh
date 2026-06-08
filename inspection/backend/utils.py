@@ -23,6 +23,16 @@ except ImportError:  # pragma: no cover - handled gracefully at runtime
 
 
 STATUS_VALUES = {"Supported", "Refuted", "Uncertain"}
+from fastapi import FastAPI
+from pydantic import BaseModel
+
+app = FastAPI()
+
+
+class URLRequest(BaseModel):
+    url: str
+
+
 
 
 def normalize_text(text: str) -> str:
@@ -158,30 +168,54 @@ def extract_text_from_image(image: Any) -> str:
 async def extract_text_from_url(url: str) -> str:
     try:
         import httpx
+        from bs4 import BeautifulSoup
     except ImportError:
-        return ""
-        
-    if BeautifulSoup is None:
+        print("[SCRAPER ERROR] Missing dependencies")
         return ""
 
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.get(
                 url,
-                headers={"User-Agent": "Mozilla/5.0 (compatible; FactCheckBot/1.0)"},
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+                },
                 follow_redirects=True,
             )
             response.raise_for_status()
-    except httpx.RequestError:
+    except Exception as e:
+        print(f"[SCRAPER ERROR] Request failed: {e}")
         return ""
 
     soup = BeautifulSoup(response.text, "html.parser")
-    for element in soup(["script", "style", "noscript", "header", "footer", "nav"]):
+
+    # Remove junk elements
+    for element in soup(["script", "style", "noscript", "header", "footer", "nav", "aside"]):
         element.extract()
 
-    text = soup.get_text(separator=" ", strip=True)
-    return clean_text(text[:50000])[:4000]
+    # Try to find main content first
+    main_content = (
+        soup.find("article")
+        or soup.find("main")
+        or soup.find("div", class_="content")
+        or soup.find("div", class_="article")
+    )
 
+    if main_content:
+        paragraphs = main_content.find_all("p")
+    else:
+        paragraphs = soup.find_all("p")
+
+    text = " ".join(p.get_text(strip=True) for p in paragraphs)
+    text = clean_text(text)
+
+    print(f"[SCRAPER] Extracted {len(text)} characters")
+
+    # ⚠️ DO NOT discard too aggressively
+    if len(text) < 50:
+        print("[SCRAPER WARNING] Very little content extracted")
+
+    return text[:4000]
 
 def _coerce_confidence(value: Any, default: int = 50) -> int:
     try:

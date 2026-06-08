@@ -6,8 +6,15 @@ import logging
 import sqlite3
 import os
 from dotenv import load_dotenv
-
-load_dotenv()
+from fastapi import FastAPI
+from pydantic import BaseModel
+from fastapi.middleware.cors import CORSMiddleware
+from inspection.backend.utils import extract_text_from_url
+from inspection.backend.rag import verify_claim
+# Load .env from the same directory as this file
+env_path = os.path.join(os.path.dirname(__file__), ".env")
+load_dotenv(env_path)
+load_dotenv() # Also load from CWD just in case
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,8 +22,8 @@ from pydantic import BaseModel, HttpUrl, Field
 from typing import List, Dict, Any
 from datetime import datetime
 
-from rag import verify_claim
-from utils import clean_text, configure_tesseract, extract_text_from_image, extract_text_from_url, parse_response
+from inspection.backend.rag import verify_claim
+from inspection.backend.utils import clean_text, configure_tesseract, extract_text_from_image, extract_text_from_url, parse_response
 
 
 logging.basicConfig(level=logging.INFO)
@@ -51,7 +58,8 @@ class HistoryItem(BaseModel):
     timestamp: str = Field(..., max_length=100)
 
 def init_db():
-    with sqlite3.connect("history.db") as conn:
+    db_path = os.path.join(os.path.dirname(__file__), "history.db")
+    with sqlite3.connect(db_path) as conn:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS history (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -92,7 +100,7 @@ def startup_event() -> None:
         logger.info("✓ Found %d valid Gemini API key(s) configured.", len(valid_keys))
     
     try:
-        from rag import get_qa_chain
+        from inspection.backend.rag import get_qa_chain
         qa_chain = get_qa_chain()
         logger.info("✓ RAG pipeline initialized successfully")
     except Exception as e:
@@ -118,8 +126,9 @@ def health() -> dict[str, object]:
     ]
     valid_gemini_count = sum(1 for k in gemini_keys if k)
     
-    faiss_exists = os.path.exists("faiss_index") and os.path.exists("faiss_index/.index_version")
-    data_exists = os.path.exists("train.tsv") or os.path.exists("data.txt")
+    base_dir = os.path.dirname(__file__)
+    faiss_exists = os.path.exists(os.path.join(base_dir, "faiss_index")) and os.path.exists(os.path.join(base_dir, "faiss_index", ".index_version"))
+    data_exists = os.path.exists(os.path.join(base_dir, "train.tsv")) or os.path.exists(os.path.join(base_dir, "data.txt"))
     
     return {
         "status": "running",
@@ -133,7 +142,8 @@ def health() -> dict[str, object]:
 @app.get("/history")
 def get_history() -> list[HistoryItem]:
     try:
-        with sqlite3.connect("history.db") as conn:
+        db_path = os.path.join(os.path.dirname(__file__), "history.db")
+        with sqlite3.connect(db_path) as conn:
             cur = conn.execute("SELECT claim_text, verdict, timestamp FROM history ORDER BY id DESC LIMIT 10")
             return [HistoryItem(claim_text=row[0], verdict=row[1], timestamp=row[2]) for row in cur.fetchall()]
     except Exception as e:
@@ -144,7 +154,8 @@ def get_history() -> list[HistoryItem]:
 @app.post("/history")
 def post_history(item: HistoryItem) -> dict[str, str]:
     try:
-        with sqlite3.connect("history.db") as conn:
+        db_path = os.path.join(os.path.dirname(__file__), "history.db")
+        with sqlite3.connect(db_path) as conn:
             conn.execute(
                 "INSERT INTO history (claim_text, verdict, timestamp) VALUES (?, ?, ?)",
                 (item.claim_text, item.verdict, item.timestamp)
@@ -178,36 +189,29 @@ async def verify_legacy(req: TextRequest) -> dict[str, object]:
     return await verify_text(req)
 
 
+
+
 @app.post("/verify-url")
-async def verify_url(req: URLRequest) -> dict[str, object]:
-    try:
-        text = await extract_text_from_url(str(req.url))
-    except Exception:
+async def verify_url(request: URLRequest):
+    url = str(request.url)
+
+    print(f"[URL] Received: {url}")
+
+    text = await extract_text_from_url(url)
+
+    if not text or len(text.strip()) < 20:
         return {
             "status": "Uncertain",
-            "confidence": 0,
-            "summary": "The URL could not be scraped or did not contain enough readable text.",
-            "evidence": [],
-        }
-    if not text:
-        return {
-            "status": "Uncertain",
-            "confidence": 0,
-            "summary": "The URL could not be scraped or did not contain enough readable text.",
-            "evidence": [],
+            "confidence": 20,
+            "summary": "Could not extract meaningful content from the URL.",
+            "evidence": []
         }
 
-    try:
-        result = await asyncio.to_thread(verify_claim, text)
-        return _structured_response(result)
-    except Exception:
-        return {
-            "status": "Uncertain",
-            "confidence": 0,
-            "summary": "The URL content could not be verified due to an unexpected backend error.",
-            "evidence": [],
-        }
+    print(f"[SCRAPER OUTPUT]: {text[:200]}")
 
+    result = verify_claim(text)
+
+    return result
 
 @app.post("/verify-image")
 async def verify_image(file: UploadFile = File(...)) -> dict[str, object]:

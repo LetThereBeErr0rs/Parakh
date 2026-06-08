@@ -1274,9 +1274,9 @@
             const opts = { method: 'POST', body: payload };
             if (type !== 'image') opts.headers = { 'Content-Type': 'application/json' };
 
-            // Add timeout (10 seconds)
+            // Add timeout (60 seconds to allow Gemini fallback to complete)
             const controller = new AbortController();
-            const timeout = setTimeout(() => controller.abort(), 10000);
+            const timeout = setTimeout(() => controller.abort(), 60000);
             opts.signal = controller.signal;
 
             const res = await fetch(`${base}/${ep}`, opts);

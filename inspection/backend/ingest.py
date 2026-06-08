@@ -12,7 +12,8 @@ logger = logging.getLogger(__name__)
 # schema changes to force a full rebuild on next startup.
 # ─────────────────────────────────────────────────────────────
 _INDEX_VERSION = "v2-labelled"
-_VERSION_FILE  = os.path.join("faiss_index", ".index_version")
+_FAISS_DIR = os.path.join(os.path.dirname(__file__), "faiss_index")
+_VERSION_FILE  = os.path.join(_FAISS_DIR, ".index_version")
 
 # LIAR-dataset label → normalised verdict mapping
 _LABEL_MAP: dict[str, str] = {
@@ -32,7 +33,7 @@ def _map_label(raw: str) -> str | None:
 
 def _index_is_current() -> bool:
     """Return True iff an up-to-date index exists on disk."""
-    if not os.path.exists("faiss_index"):
+    if not os.path.exists(_FAISS_DIR):
         return False
     if not os.path.exists(_VERSION_FILE):
         return False
@@ -41,7 +42,7 @@ def _index_is_current() -> bool:
 
 
 def _write_version_stamp() -> None:
-    os.makedirs("faiss_index", exist_ok=True)
+    os.makedirs(_FAISS_DIR, exist_ok=True)
     with open(_VERSION_FILE, "w", encoding="utf-8") as f:
         f.write(_INDEX_VERSION)
 
@@ -176,7 +177,7 @@ def ensure_faiss_index():
         logger.info("FAISS index exists and version is current. Loading from disk.")
         try:
             db = FAISS.load_local(
-                "faiss_index",
+                _FAISS_DIR,
                 embeddings,
                 allow_dangerous_deserialization=True,
             )
@@ -189,8 +190,9 @@ def ensure_faiss_index():
     # ── Build a fresh index ──────────────────────────────────────────────
     logger.info("Building FAISS index (schema %s)…", _INDEX_VERSION)
 
-    tsv_path = "train.tsv"
-    txt_path = "data.txt"
+    base_dir = os.path.dirname(__file__)
+    tsv_path = os.path.join(base_dir, "train.tsv")
+    txt_path = os.path.join(base_dir, "data.txt")
 
     if os.path.exists(tsv_path):
         documents = _load_documents_from_tsv(tsv_path)
@@ -207,7 +209,7 @@ def ensure_faiss_index():
         raise RuntimeError("Document list is empty after parsing.  Check your data files.")
 
     db = FAISS.from_documents(documents, embeddings)
-    db.save_local("faiss_index")
+    db.save_local(_FAISS_DIR)
     _write_version_stamp()
     logger.info("Saved FAISS index (%s documents, version %s).", len(documents), _INDEX_VERSION)
     return db  # ✅ THIS LINE MUST EXIST

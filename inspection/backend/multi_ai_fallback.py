@@ -1,7 +1,10 @@
 import os
 from dotenv import load_dotenv
 
-load_dotenv()
+# Load .env from the same directory as this file
+env_path = os.path.join(os.path.dirname(__file__), ".env")
+load_dotenv(env_path)
+load_dotenv() # Also load from CWD just in case
 
 API_KEYS = [
     os.getenv("GEMINI_API_KEY_1"),
